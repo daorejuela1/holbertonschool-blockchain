@@ -28,12 +28,8 @@
 uint8_t *sha256(int8_t const *s, size_t len,
 		uint8_t digest[SHA256_DIGEST_LENGTH])
 {
-	const EVP_MD *md;
-
-	if (!s || !len)
+	if (!s || !len || !digest)
 		return (NULL);
 
-	md = EVP_sha256();
-	strncpy((char *)digest, (char *)md, len);
-	return (digest);
+	return (SHA256((const unsigned char *)s, len, digest));
 }
