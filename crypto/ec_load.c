@@ -21,7 +21,7 @@
 EC_KEY *ec_load(char const *folder)
 {
 	char *priv_path = NULL, *pub_path = NULL;
-	FILE *priv_fd, *pub_fd;
+	FILE *priv_fd = NULL, *pub_fd = NULL;
 	EC_KEY *key = NULL;
 
 	if (!folder)
@@ -29,34 +29,31 @@ EC_KEY *ec_load(char const *folder)
 
 	priv_path = calloc(strlen(folder) + strlen(PRIV_NAME) + 1, 1);
 	if (!priv_path)
-		return (0);
+		return (NULL);
 	pub_path = calloc(strlen(folder) + strlen(PUB_NAME) + 1, 1);
 	if (!pub_path)
 	{
 		free(priv_path);
-		return (0);
+		return (NULL);
 	}
-	strcpy(priv_path, folder);
-	strcat(priv_path, PRIV_NAME);
+	strcpy(priv_path, folder), strcat(priv_path, PRIV_NAME);
 	priv_fd = fopen(priv_path, "r");
+	strcpy(pub_path, folder), strcat(pub_path, PUB_NAME);
+	pub_fd = fopen(pub_path, "r");
+	free(priv_path), free(pub_path);
+	if (!priv_fd || !pub_fd)
+		return (NULL);
+	if (!PEM_read_EC_PUBKEY(pub_fd, &key, NULL, NULL))
+	{
+		fclose(pub_fd);
+		return (NULL);
+	}
+	fclose(pub_fd);
 	if (!PEM_read_ECPrivateKey(priv_fd, &key, NULL, NULL))
 	{
 		fclose(priv_fd);
-		free(priv_path);
-		return (0);
+		return (NULL);
 	}
 	fclose(priv_fd);
-	free(priv_path);
-	strcpy(pub_path, folder);
-	strcat(pub_path, PUB_NAME);
-	pub_fd = fopen(pub_path, "r");
-	if (!PEM_write_EC_PUBKEY(pub_fd, key))
-	{
-		fclose(pub_fd);
-		free(pub_path);
-		return (0);
-	}
-	fclose(pub_fd);
-	free(pub_path);
 	return (key);
 }
