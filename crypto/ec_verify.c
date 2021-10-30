@@ -34,6 +34,6 @@ int ec_verify(EC_KEY const *key, uint8_t const *msg,
 	if (!key || !msg || !sig)
 		return (result);
 	result = ECDSA_verify(0, msg, msglen, sig->sig, sig->len, (EC_KEY *)key);
-	return (result);
+	return (result == 1);
 }
 
