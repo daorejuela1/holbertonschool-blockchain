@@ -17,7 +17,7 @@
 #include <openssl/sha.h>
 
 #define HBLK_MAGIC "HBLK"
-#define HBLK_VERSION "0.1"
+#define HBLK_VERSION "0.2"
 #define BLOCKCHAIN_DATA_MAX 1024
 
 /**
