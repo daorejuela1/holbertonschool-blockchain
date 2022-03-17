@@ -24,5 +24,5 @@ int hash_matches_difficulty(uint8_t const hash[SHA256_DIGEST_LENGTH],
 		}
 		ptr++;
 	}
-	return (difficulty_match == difficulty);
+	return (difficulty_match >= difficulty);
 }
