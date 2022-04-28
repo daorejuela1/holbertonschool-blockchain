@@ -3,6 +3,9 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdio.h>
+#define LSB 1
+#define MSB 2
+#define HBLK_ENDIAN LSB
 
 static void bswap(uint8_t *p, size_t size);
 static int read_attr(int fd, int encoding, void *attr, size_t size);
@@ -26,7 +29,7 @@ static llist_t *read_transactions(int fd, int encoding)
 		return (NULL);
 	if ((int)num_txs <= 0)
 	{
-		llist_destroy(list, false, NULL);
+		llist_destroy(list, 0, NULL);
 		return (NULL);
 	}
 
@@ -42,7 +45,7 @@ static llist_t *read_transactions(int fd, int encoding)
 			!(tx->outputs = read_outputs(fd, encoding, num_outputs))
 		)
 		{
-			llist_destroy(list, true, (node_dtor_t)transaction_destroy);
+			llist_destroy(list, 1, (node_dtor_t)transaction_destroy);
 			return (NULL);
 		}
 	}
@@ -78,7 +81,7 @@ static llist_t *read_inputs(int fd, int encoding, int num_inputs)
 			!read_attr(fd, encoding, &in->sig.len, sizeof(in->sig.len))
 		)
 		{
-			llist_destroy(inputs, true, NULL);
+			llist_destroy(inputs, 1, NULL);
 			return (NULL);
 		}
 	}
@@ -110,7 +113,7 @@ static llist_t *read_outputs(int fd, int encoding, int num_outputs)
 			!read_attr(fd, encoding, &out->hash, sizeof(out->hash))
 		)
 		{
-			llist_destroy(outputs, true, NULL);
+			llist_destroy(outputs, 1, NULL);
 			return (NULL);
 		}
 	}
@@ -165,7 +168,7 @@ blockchain_t *blockchain_deserialize(char const *path)
 			!read_attr(fd, encoding,  block->hash,            sizeof(block->hash))
 		)
 		{
-			llist_destroy(blockchain->chain, true, (node_dtor_t)block_destroy);
+			llist_destroy(blockchain->chain, 1, (node_dtor_t)block_destroy);
 			free(blockchain);
 			close(fd);
 			return (NULL);
@@ -184,8 +187,8 @@ blockchain_t *blockchain_deserialize(char const *path)
 			!read_attr(fd, encoding, &utxo->out.hash, sizeof(utxo->out.hash))
 		)
 		{
-			llist_destroy(blockchain->chain, true, (node_dtor_t)block_destroy);
-			llist_destroy(blockchain->unspent, true, NULL);
+			llist_destroy(blockchain->chain, 1, (node_dtor_t)block_destroy);
+			llist_destroy(blockchain->unspent, 1, NULL);
 			free(blockchain);
 			close(fd);
 			return (NULL);

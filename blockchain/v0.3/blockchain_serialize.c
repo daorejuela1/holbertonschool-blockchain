@@ -2,6 +2,9 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <unistd.h>
+#define LSB 1
+#define MSB 2
+#define HBLK_ENDIAN LSB
 
 static void bswap(uint8_t *p, size_t size);
 static void write_attr(int fd, int encoding, void *attr, size_t size);
