@@ -8,19 +8,19 @@
  **/
 unspent_tx_out_t *find_unspent_output(llist_t *all_unspent, tx_in_t *in)
 {
-	int i, size;
+	int i, size, v1, v2;
 	unspent_tx_out_t *tmp_unspent;
 
 	for (i = 0, size = llist_size(all_unspent); i < size; i++)
 	{
 		tmp_unspent = llist_get_node_at(all_unspent, i);
-		if (
-			!memcmp(tmp_unspent->out.hash, in->tx_out_hash, sizeof(tmp_unspent->out.hash)) &&
-			!memcmp(tmp_unspent->block_hash, in->block_hash, sizeof(tmp_unspent->block_hash))
-			)
+		v1 = !memcmp(tmp_unspent->out.hash,
+				in->tx_out_hash, sizeof(tmp_unspent->out.hash));
+		v2 = !memcmp(tmp_unspent->block_hash,
+				in->block_hash, sizeof(tmp_unspent->block_hash));
+		if (v1 && v2)
 			return (tmp_unspent);
 	}
-
 	return (NULL);
 }
 
@@ -35,8 +35,8 @@ int transaction_is_valid(transaction_t *transaction, llist_t *all_unspent)
 	uint8_t hash_buf[SHA256_DIGEST_LENGTH];
 	int i, size;
 	uint32_t unspent_total = 0, total = 0;
-	unspent_tx_out_t *tmp_unspent;
-	tx_in_t *tmp_input;
+	unspent_tx_out_t *tmp_unspent = NULL;
+	tx_in_t *tmp_input = NULL;
 
 	if (!transaction)
 		return (0);
@@ -47,8 +47,10 @@ int transaction_is_valid(transaction_t *transaction, llist_t *all_unspent)
 	for (i = 0, size = llist_size(transaction->inputs); i < size; i++)
 	{
 		tmp_input = llist_get_node_at(transaction->inputs, i);
-		if (!(tmp_unspent = find_unspent_output(all_unspent, tmp_input)) ||
-			!ec_verify(ec_from_pub(tmp_unspent->out.pub), transaction->id, SHA256_DIGEST_LENGTH, &tmp_input->sig)
+		tmp_unspent = find_unspent_output(all_unspent, tmp_input);
+		if (!tmp_unspent ||
+			!ec_verify(ec_from_pub(tmp_unspent->out.pub),
+				transaction->id, SHA256_DIGEST_LENGTH, &tmp_input->sig)
 		)
 			return (0);
 		unspent_total += tmp_unspent->out.amount;
