@@ -1,6 +1,39 @@
 #include "blockchain.h"
 
 /**
+ * block_transactions_are_valid - checks if a block's transactions are valid
+ * @block: pointer to block
+ * @all_unspent: list of utxo's
+ * Return: 1 if transactions are valid, 0 otherwise
+ **/
+static int block_transactions_are_valid(block_t const *block,
+		llist_t *all_unspent)
+{
+	int i, size = llist_size(block->transactions);
+	transaction_t *tx;
+
+	if (!size || !block)
+		return (0);
+
+	for (i = 0; i < size; i++)
+	{
+		tx = llist_get_node_at(block->transactions, i);
+		if (i)
+		{
+			if (!transaction_is_valid(tx, all_unspent))
+				return (0);
+		}
+		else
+		{
+			if (!coinbase_is_valid(tx, block->info.index))
+				return (0);
+		}
+	}
+
+	return (1);
+}
+
+/**
  * validate_tx - validates each tx
  * @node: tx
  * @idx: index of node
@@ -37,7 +70,6 @@ int block_is_valid(block_t const *block, block_t const *prev_block,
 {
 	uint8_t hash_buf[SHA256_DIGEST_LENGTH] = {0};
 	block_t const _genesis = GENESIS_BLOCK;
-	validation_vistor_t visitor = {0};
 
 	if (!block || (!prev_block && block->info.index != 0))
 		return (1);
@@ -59,11 +91,7 @@ int block_is_valid(block_t const *block, block_t const *prev_block,
 		return (1);
 	if (llist_size(block->transactions) < 1)
 		return (1);
-	visitor.valid = 1;
-	visitor.all_unspent = all_unspent;
-	visitor.block_index = block->info.index;
-	if (llist_for_each(block->transactions, validate_tx, &visitor) ||
-		!visitor.valid)
+	if (!block_transactions_are_valid(block, all_unspent))
 		return (1);
 	return (0);
 }
