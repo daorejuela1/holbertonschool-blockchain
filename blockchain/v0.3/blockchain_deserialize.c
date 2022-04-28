@@ -1,116 +1,240 @@
-/*
- * ===========================================================================
- *
- *       Filename:  blockchain_deserialize.c
- *
- *    Description:  Loads a blockchain structure
- *
- *        Version:  1.0
- *        Created:  11/02/2021 12:35:38 AM
- *       Revision:  none
- *       Compiler:  gcc
- *
- *         Author:  David Orejuela
- *   Organization:  Holberton
- *
- * ===========================================================================
- */
-#define BUFSIZE 4096
-#define NULL_CLEAN (close(fd), free(blockchain), NULL)
-#define LIN (close(fd), free(block), llist_destroy(blockchain->chain, 1, NULL))
-#define READBUF(x) ((memset(buf, 0, BUFSIZE)), read(fd, buf, x))
-#define SPREADBUF(x) ((memset(buf, 0, BUFSIZE)), spread(fd, endianess, buf, x))
-#include "blockchain.h"
-llist_t *read_blocks(blockchain_t *blockchain, size_t size,
-		int fd, uint8_t endianess);
+#include <blockchain.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdio.h>
+
+static void bswap(uint8_t *p, size_t size);
+static int read_attr(int fd, int encoding, void *attr, size_t size);
+static llist_t *read_transactions(int fd, int encoding);
+static llist_t *read_inputs(int fd, int encoding, int num_inputs);
+static llist_t *read_outputs(int fd, int encoding, int num_outputs);
+
 /**
- * spread - writes an attribute into a file in the proper endian
+ * read_transactions - reads transactions from a serialized blockchain file
  * @fd: file descriptor
- * @endianess: file endian
- * @attr: attribute to read
- * @size: size of attribute
+ * @encoding: file encoding
+ * Return: list of transactions
  **/
-static void spread(int fd, int endianess, void *attr, size_t size)
+static llist_t *read_transactions(int fd, int encoding)
 {
-	read(fd, attr, size);
-	if (!endianess)
-		_swap_endian((uint8_t *)attr, size);
+	uint32_t num_txs, num_inputs, num_outputs;
+	transaction_t *tx;
+	llist_t *list;
+
+	if (!read_attr(fd, encoding, &num_txs, sizeof(num_txs)) || !(list = llist_create(MT_SUPPORT_FALSE)))
+		return (NULL);
+	if ((int)num_txs <= 0)
+	{
+		llist_destroy(list, false, NULL);
+		return (NULL);
+	}
+
+	while ((int)num_txs-- > 0)
+	{
+		tx = calloc(1, sizeof(transaction_t));
+		llist_add_node(list, tx, ADD_NODE_REAR);
+		if (
+			!read_attr(fd, encoding, &tx->id, sizeof(tx->id)) ||
+			!read_attr(fd, encoding, &num_inputs, sizeof(num_inputs)) ||
+			!read_attr(fd, encoding, &num_outputs, sizeof(num_outputs)) ||
+			!(tx->inputs = read_inputs(fd, encoding, num_inputs)) ||
+			!(tx->outputs = read_outputs(fd, encoding, num_outputs))
+		)
+		{
+			llist_destroy(list, true, (node_dtor_t)transaction_destroy);
+			return (NULL);
+		}
+	}
+
+	return (list);
 }
 
 /**
- * blockchain_deserialize - Loads a blockchain structure from path
- * @path: path to get the info from
- *
- * Return: Blockchain structure
- */
+ * read_inputs - reads transaction inputs from a serialized blockchain file
+ * @fd: file descriptor
+ * @encoding: encoding (MSB or LSB)
+ * @num_inputs: number of anticipated inputs
+ * Return: pointer to list of transaction inputs or NULL on failure
+ **/
+static llist_t *read_inputs(int fd, int encoding, int num_inputs)
+{
+	llist_t *inputs;
+	tx_in_t *in;
+
+	if (num_inputs <= 0 || !(inputs = llist_create(MT_SUPPORT_FALSE)))
+		return (NULL);
+
+	while ((int)num_inputs-- > 0)
+	{
+
+		in = calloc(1, sizeof(tx_in_t));
+		llist_add_node(inputs, in, ADD_NODE_REAR);
+		if (
+			!read_attr(fd, encoding, &in->block_hash, sizeof(in->block_hash)) ||
+			!read_attr(fd, encoding, &in->tx_id, sizeof(in->tx_id)) ||
+			!read_attr(fd, encoding, &in->tx_out_hash, sizeof(in->tx_out_hash)) ||
+			!read_attr(fd, encoding, &in->sig.sig, sizeof(in->sig.sig)) ||
+			!read_attr(fd, encoding, &in->sig.len, sizeof(in->sig.len))
+		)
+		{
+			llist_destroy(inputs, true, NULL);
+			return (NULL);
+		}
+	}
+	return (inputs);
+}
+
+/**
+ * read_outputs - reads transaction outputs from a serialized blockchain file
+ * @fd: file descriptor
+ * @encoding: encoding (MSB or LSB)
+ * @num_outputs: number of anticipated outputs
+ * Return: pointer to list of transaction outputs or NULL on failure
+ **/
+static llist_t *read_outputs(int fd, int encoding, int num_outputs)
+{
+	llist_t *outputs;
+	tx_out_t *out;
+
+	if (num_outputs <= 0 || !(outputs = llist_create(MT_SUPPORT_FALSE)))
+		return (NULL);
+
+	while ((int)num_outputs-- > 0)
+	{
+		out = calloc(1, sizeof(tx_out_t));
+		llist_add_node(outputs, out, ADD_NODE_REAR);
+		if (
+			!read_attr(fd, encoding, &out->amount, sizeof(out->amount)) ||
+			!read_attr(fd, encoding, &out->pub, sizeof(out->pub)) ||
+			!read_attr(fd, encoding, &out->hash, sizeof(out->hash))
+		)
+		{
+			llist_destroy(outputs, true, NULL);
+			return (NULL);
+		}
+	}
+	return (outputs);
+}
+
+/**
+ * blockchain_deserialize - deserializes a Blockchain from a file
+ * @path: contains the path to a file to load the Blockchain from
+ *     * return NULL if file doesn’t exist or we don't permission to open
+ * Return: pointer to deserialized Blockchain, or NULL upon failure
+ **/
 blockchain_t *blockchain_deserialize(char const *path)
 {
-	int fd;
-	blockchain_t *blockchain = NULL;
-	char buf[BUFSIZE];
-	uint8_t endianess;
-	uint8_t size = 0;
+	int fd = open(path, O_RDONLY);
+	unsigned char buf[sizeof(block_t)];
+	uint8_t encoding;
+	uint32_t num_blocks, num_unspent;
+	blockchain_t *blockchain;
+	block_t *block;
+	unspent_tx_out_t *utxo;
 
-	if (!path)
-		return (NULL);
-	fd = open(path, O_RDONLY);
 	if (fd == -1)
 		return (NULL);
-	READBUF(strlen(HBLK_MAGIC));
-	if (strcmp(buf, HBLK_MAGIC))
-		return (NULL_CLEAN);
-	READBUF(strlen(HBLK_VERSION));
-	if (strcmp(buf, HBLK_VERSION))
-		return (NULL_CLEAN);
-	READBUF(1);
-	endianess = *buf;
-	blockchain = blockchain_create();
-	block_destroy((block_t *)llist_pop(blockchain->chain));
-	SPREADBUF(4);
-	size = *buf;
-	blockchain->chain = read_blocks(blockchain, size, fd, endianess);
-	if (!(blockchain->chain))
+
+	if (
+		read(fd, buf, sizeof(HBLK_MAGIC) - 1) < (ssize_t)sizeof(HBLK_MAGIC) - 1   ||
+		memcmp(buf, HBLK_MAGIC, sizeof(HBLK_MAGIC) - 1)                  ||
+		read(fd, buf, sizeof(HBLK_VERSION) - 1) < (ssize_t)sizeof(HBLK_VERSION) - 1 ||
+		!(blockchain = blockchain_create())
+	)
+	{
+		close(fd);
 		return (NULL);
+	}
+
+	block_destroy((block_t *)llist_pop(blockchain->chain));
+	read(fd, &encoding, sizeof(encoding));
+	read_attr(fd, encoding, &num_blocks, sizeof(num_blocks));
+	read_attr(fd, encoding, &num_unspent, sizeof(num_unspent));
+	while ((int)num_blocks-- > 0)
+	{
+		block = calloc(1, sizeof(block_t));
+		if (
+			!read_attr(fd, encoding, &block->info.index,      sizeof(block->info.index))      ||
+			!read_attr(fd, encoding, &block->info.difficulty, sizeof(block->info.difficulty)) ||
+			!read_attr(fd, encoding, &block->info.timestamp,  sizeof(block->info.timestamp))  ||
+			!read_attr(fd, encoding, &block->info.nonce,      sizeof(block->info.nonce))      ||
+			!read_attr(fd, encoding,  block->info.prev_hash,  sizeof(block->info.prev_hash))  ||
+			!read_attr(fd, encoding, &block->data.len,        sizeof(block->data.len))        ||
+			!read_attr(fd, encoding,  block->data.buffer,     block->data.len)                ||
+			!read_attr(fd, encoding,  block->hash,            sizeof(block->hash))
+		)
+		{
+			llist_destroy(blockchain->chain, true, (node_dtor_t)block_destroy);
+			free(blockchain);
+			close(fd);
+			return (NULL);
+		}
+		block->transactions = read_transactions(fd, encoding);
+		llist_add_node(blockchain->chain, block, ADD_NODE_REAR);
+	}
+	while ((int)num_unspent-- > 0)
+	{
+		utxo = calloc(1, sizeof(unspent_tx_out_t));
+		if (
+			!read_attr(fd, encoding, &utxo->block_hash, sizeof(utxo->block_hash)) ||
+			!read_attr(fd, encoding, &utxo->tx_id, sizeof(utxo->tx_id)) ||
+			!read_attr(fd, encoding, &utxo->out.amount, sizeof(utxo->out.amount)) ||
+			!read_attr(fd, encoding, &utxo->out.pub, sizeof(utxo->out.pub)) ||
+			!read_attr(fd, encoding, &utxo->out.hash, sizeof(utxo->out.hash))
+		)
+		{
+			llist_destroy(blockchain->chain, true, (node_dtor_t)block_destroy);
+			llist_destroy(blockchain->unspent, true, NULL);
+			free(blockchain);
+			close(fd);
+			return (NULL);
+		}
+		llist_add_node(blockchain->unspent, utxo, ADD_NODE_REAR);
+	}
 	close(fd);
 	return (blockchain);
 }
-/**
- * read_blocks - reads blocks from the the structure
- * @blockchain: blockchain structure
- * @size: size of blocks
- * @fd: file descriptor or readed file
- * @endianess: endianess file conf
- * Return: Blockchain structure or null in error
- */
-llist_t *read_blocks(blockchain_t *blockchain,
-		size_t size, int fd, uint8_t endianess)
-{
-	size_t i;
-	block_t *block = NULL;
-	char buf[BUFSIZE];
 
-	for (i = 0; i < size; i++)
-	{
-		block = calloc(1, sizeof(*block));
-		if (!block)
-			return (NULL);
-		SPREADBUF(sizeof(block->info.index));
-		memcpy(&(block->info.index), buf, sizeof(block->info.index));
-		SPREADBUF(sizeof(block->info.difficulty));
-		memcpy(&(block->info.difficulty), buf, sizeof(block->info.difficulty));
-		SPREADBUF(sizeof(block->info.timestamp));
-		memcpy(&(block->info.timestamp), buf, sizeof(block->info.timestamp));
-		SPREADBUF(sizeof(block->info.nonce));
-		memcpy(&(block->info.nonce), buf, sizeof(block->info.nonce));
-		SPREADBUF(sizeof(block->info.prev_hash));
-		memcpy(block->info.prev_hash, buf, sizeof(block->info.prev_hash));
-		SPREADBUF(sizeof(block->data.len));
-		memcpy(&(block->data.len), buf, sizeof(block->data.len));
-		SPREADBUF(block->data.len);
-		memcpy(block->data.buffer, buf, block->data.len);
-		SPREADBUF(sizeof(block->hash));
-		memcpy(block->hash, buf, sizeof(block->hash));
-		llist_add_node(blockchain->chain, block, ADD_NODE_REAR);
-	}
-	return ((llist_t *) blockchain->chain);
+/**
+ * read_attr - reads an ELF file attribute from an ELF file
+ * @fd: file descriptor
+ * @encoding: encoding of attribute
+ * @attr: pointer to attribute where value will be stored
+ * @size: size of attribute
+ * Return: 1 on success | 0 on failure
+ **/
+static int read_attr(int fd, int encoding, void *attr, size_t size)
+{
+	static int bytes_read;
+	ssize_t res;
+
+	res = read(fd, attr, size);
+	bytes_read += res;
+	if (res == -1)
+		perror(NULL);
+	if (res != (ssize_t)size)
+		return (0);
+
+	if (encoding == MSB)
+		bswap((uint8_t *)attr, size);
+
+	return (1);
+}
+
+/**
+ * bswap - byte swap
+ * @p: pointer to data
+ * @size: data size
+ **/
+static void bswap(uint8_t *p, size_t size)
+{
+	uint8_t buf[64] = {0};
+	int i;
+
+	for (i = size - 1; i >= 0; i--)
+		buf[size - i - 1] = p[i];
+
+	for (i = 0; i < (int)size; i++)
+		p[i] = buf[i];
 }
