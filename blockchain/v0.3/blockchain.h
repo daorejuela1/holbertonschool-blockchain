@@ -31,7 +31,7 @@
 /**
  * struct blockchain_s - Blockchain structure
  *
- * @chain:	Linked list of Blocks
+ * @chain: Linked list of Blocks
  * @unspent: Linked list of unspent transaction outputs
  */
 typedef struct blockchain_s
@@ -73,7 +73,7 @@ typedef struct block_info_s
  * struct block_data_s - Block data
  *
  * @buffer: Data buffer
- * @len:	Data size (in bytes)
+ * @len: Data size (in bytes)
  */
 typedef struct block_data_s
 {

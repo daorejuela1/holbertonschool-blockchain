@@ -1,101 +1,61 @@
 #include "transaction.h"
 
 /**
- * match_unspent - finds unspent to match txi
- * @node: utxo
- * @arg: txi struct
- * Return: 0 if continue else 1
- */
-int match_unspent(llist_node_t node, void *arg)
+ * find_unspent_output - finds a utxo in a utxo list
+ * @all_unspent: list of all utxos
+ * @in: transaction input used to find utxo
+ * Return: pointer to utxo if found, else NULL
+ **/
+unspent_tx_out_t *find_unspent_output(llist_t *all_unspent, tx_in_t *in)
 {
-	unspent_tx_out_t *utxo = node;
-	tx_in_t *txi = arg;
+	int i, size;
+	unspent_tx_out_t *tmp_unspent;
 
-	if (!memcmp(txi->tx_out_hash, utxo->out.hash, SHA256_DIGEST_LENGTH))
-		return (1);
-	return (0);
-}
-
-/**
- * check_inputs - validates each input
- * @node: txi
- * @idx: index of node
- * @arg: visitor
- * Return: 0 if continue else 1
- */
-int check_inputs(llist_node_t node, unsigned int idx, void *arg)
-{
-	tx_in_t *txi = node;
-	validation_vistor_t *visitor = arg;
-	unspent_tx_out_t *utxo =
-		llist_find_node(visitor->all_unspent, match_unspent, txi);
-	EC_KEY *key;
-
-	if (!utxo)
+	for (i = 0, size = llist_size(all_unspent); i < size; i++)
 	{
-		dprintf(2, "check_inputs: utxo NULL\n");
-		visitor->valid = 0;
-		return (1);
+		tmp_unspent = llist_get_node_at(all_unspent, i);
+		if (
+			!memcmp(tmp_unspent->out.hash, in->tx_out_hash, sizeof(tmp_unspent->out.hash)) &&
+			!memcmp(tmp_unspent->block_hash, in->block_hash, sizeof(tmp_unspent->block_hash))
+			)
+			return (tmp_unspent);
 	}
-	key = ec_from_pub(utxo->out.pub);
-	if (!key ||
-		!ec_verify(key, visitor->tx->id, SHA256_DIGEST_LENGTH, &txi->sig))
-	{
-		dprintf(2, "check_inputs: key error\n");
-		visitor->valid = 0;
-		return (EC_KEY_free(key), 1);
-	}
-	EC_KEY_free(key);
-	visitor->in_amount += utxo->out.amount;
-	return (0);
-	(void)idx;
+
+	return (NULL);
 }
 
 /**
- * check_outputs - validates each input
- * @node: tx_out_t *
- * @idx: index of node
- * @arg: visitor
- * Return: 0 if continue else 1
- */
-int check_outputs(llist_node_t node, unsigned int idx, void *arg)
-{
-	tx_out_t *txo = node;
-	validation_vistor_t *visitor = arg;
-
-	visitor->out_amount += txo->amount;
-	return (0);
-	(void)idx;
-}
-
-/**
- * transaction_is_valid - validates tx
- * @transaction: the tx to validate
- * @all_unspent: all unspent txo's
- * Return: 1 if valid else 0
- */
-int transaction_is_valid(transaction_t const *transaction,
-	llist_t *all_unspent)
+ * transaction_is_valid - checks whether a transaction is valid
+ * @transaction: transaction to verify
+ * @all_unspent: list of all unspent transaction outputs to date
+ * Return: 1 if transaction is valid | 0 otherwise
+ **/
+int transaction_is_valid(transaction_t *transaction, llist_t *all_unspent)
 {
 	uint8_t hash_buf[SHA256_DIGEST_LENGTH];
-	validation_vistor_t visitor = {0};
+	int i, size;
+	uint32_t unspent_total = 0, total = 0;
+	unspent_tx_out_t *tmp_unspent;
+	tx_in_t *tmp_input;
 
-	if (!transaction || !all_unspent)
+	if (!transaction)
 		return (0);
-	visitor.tx = transaction;
-	visitor.all_unspent = all_unspent;
-	visitor.valid = 1;
 	if (!transaction_hash(transaction, hash_buf))
 		return (0);
-	if (memcmp(transaction->id, hash_buf, SHA256_DIGEST_LENGTH))
+	if (memcmp(hash_buf, transaction->id, sizeof(hash_buf)))
 		return (0);
-	if (llist_for_each(transaction->inputs, check_inputs, &visitor) ||
-		!visitor.valid)
-		return (0);
-	if (llist_for_each(transaction->outputs, check_outputs, &visitor) ||
-		visitor.in_amount != visitor.out_amount || !visitor.in_amount)
+	for (i = 0, size = llist_size(transaction->inputs); i < size; i++)
 	{
-		return (0);
+		tmp_input = llist_get_node_at(transaction->inputs, i);
+		if (!(tmp_unspent = find_unspent_output(all_unspent, tmp_input)) ||
+			!ec_verify(ec_from_pub(tmp_unspent->out.pub), transaction->id, SHA256_DIGEST_LENGTH, &tmp_input->sig)
+		)
+			return (0);
+		unspent_total += tmp_unspent->out.amount;
 	}
-	return (1);
+
+	for (i = 0, size = llist_size(transaction->outputs); i < size; i++)
+		total += ((tx_out_t *)(llist_get_node_at(transaction->outputs, i)))->amount;
+
+	return (total == unspent_total);
 }
