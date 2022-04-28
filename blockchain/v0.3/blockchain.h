@@ -101,6 +101,25 @@ typedef struct block_s
 	uint8_t	 hash[SHA256_DIGEST_LENGTH];
 } block_t;
 
+
+/**
+* struct block_header_s - used for blockchain I/O
+*
+* @magic: identifies file as blockchain
+* @version: version of blockchain
+* @endian: 1 or 2 for little or big endian
+* @blocks: number of blocks in blockchain
+* @unspent: number of unspent transactions in the blockchain
+*/
+typedef struct block_header_s
+{
+	unsigned char magic[4];
+	unsigned char version[3];
+	unsigned char endian;
+	uint32_t blocks;
+	uint32_t unspent;
+} block_header_t;
+
 /* GENESIS BLOCK - first block in the chain */
 #define GENESIS_BLOCK { \
 	{ /* info */ \

@@ -64,11 +64,14 @@ static void serialize_blocks(int fd, int encoding, llist_t *list)
 		num_txs = llist_size(block->transactions);
 		if (num_txs == -1)
 			num_txs = 0;
-		write_attr(fd, encoding, &block->info.index,      sizeof(block->info.index));
-		write_attr(fd, encoding, &block->info.difficulty, sizeof(block->info.difficulty));
-		write_attr(fd, encoding, &block->info.timestamp,  sizeof(block->info.timestamp));
+		write_attr(fd, encoding, &block->info.index, sizeof(block->info.index));
+		write_attr(fd, encoding, &block->info.difficulty,
+				sizeof(block->info.difficulty));
+		write_attr(fd, encoding,
+				&block->info.timestamp,  sizeof(block->info.timestamp));
 		write_attr(fd, encoding, &block->info.nonce,      sizeof(block->info.nonce));
-		write_attr(fd, encoding, block->info.prev_hash,   sizeof(block->info.prev_hash));
+		write_attr(fd, encoding, block->info.prev_hash,
+				sizeof(block->info.prev_hash));
 		write_attr(fd, encoding, &block->data.len,        sizeof(block->data.len));
 		write_attr(fd, encoding, block->data.buffer,      block->data.len);
 		write_attr(fd, encoding, block->hash,             sizeof(block->hash));
